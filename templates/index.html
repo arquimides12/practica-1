@@ -22,7 +22,7 @@
   </head>
   <body class="d-flex flex-column min-vh-100">
     {# Pantalla 2 (resultados) cuando hay resultados; si no, pantalla 1 (carga)
-    #} {% set show_results = results %}
+    #} {% set show_results = results or fields %}
     <!-- ================= HEADER ================= -->
     <nav class="navbar navbar-dark wm-bar wm-bar-top">
       <div class="container">
@@ -41,8 +41,12 @@
         class="container wm-wrap d-flex flex-wrap align-items-center justify-content-between gap-3"
       >
         <div>
-          <h1 class="h3 mb-1">Resultados del modelo</h1>
-          <p class="wm-muted mb-0">Revisa qué tan bien aprendió el modelo.</p>
+          <h1 class="h3 mb-1">
+            {% if results %}Resultados del modelo{% else %}Predicción de lluvia{% endif %}
+          </h1>
+          <p class="wm-muted mb-0">
+            {% if results %}Revisa qué tan bien aprendió el modelo y prueba una predicción.{% else %}Ingresa las condiciones del clima para saber si lloverá.{% endif %}
+          </p>
         </div>
         <a class="btn btn-outline-primary" href="/">
           <i class="bi bi-arrow-left me-1"></i>Cargar otro dataset
@@ -53,12 +57,12 @@
     <main
       class="container wm-wrap wm-main flex-grow-1{% if not show_results %} wm-center{% endif %}"
     >
-      {% with messages = get_flashed_messages() %} {% for message in messages %}
+      {% with messages = get_flashed_messages(with_categories=true) %} {% for category, message in messages %}
       <div
-        class="alert wm-alert alert-dismissible d-flex align-items-start wm-narrow"
+        class="alert wm-alert {{ 'wm-alert-ok' if category == 'success' else 'wm-alert-error' }} alert-dismissible d-flex align-items-start wm-narrow"
         role="alert"
       >
-        <i class="bi bi-exclamation-triangle-fill me-2 mt-1"></i>
+        <i class="bi {{ 'bi-check-circle-fill' if category == 'success' else 'bi-exclamation-circle-fill' }} me-2 mt-1"></i>
         <div>{{ message }}</div>
         <button
           type="button"
@@ -126,6 +130,11 @@
                 <i class="bi bi-play-fill me-1"></i>Entrenar y ver resultados
               </button>
             </form>
+            {% if has_model %}
+            <a class="btn btn-outline-primary w-100 mt-2" href="{{ url_for('predict_form') }}#prediccion">
+              <i class="bi bi-cloud-drizzle me-1"></i>Predecir con el modelo ya entrenado
+            </a>
+            {% endif %}
           </div>
         </section>
       </div>
@@ -330,6 +339,100 @@
           <code>{{ results.model_path }}</code>
         </p>
       </section>
+      {% endif %} {% if fields %}
+      <!-- =====================================================
+       FORMULARIO DE PREDICCIÓN
+       ===================================================== -->
+      {% set values = prediction_result.inputs if prediction_result else {} %}
+      <section id="prediccion" class="wm-card mt-4" aria-labelledby="t-prediccion">
+        <div class="wm-card-head">
+          <h2 id="t-prediccion" class="h5 mb-0">
+            <i class="bi bi-cloud-drizzle me-2"></i>Predecir lluvia
+          </h2>
+          <p class="mb-0 small wm-muted">
+            Ingresa las condiciones del clima y el modelo te dirá si lloverá.
+          </p>
+        </div>
+        <div class="wm-card-body">
+          <div class="row g-4">
+            <div class="col-lg-7">
+              <form
+                action="{{ url_for('predict') }}#prediccion"
+                method="post"
+                class="needs-validation"
+                novalidate
+                data-loading="Calculando…"
+              >
+                <div class="row g-3">
+                  {% for field in fields %}
+                  <div class="col-sm-6">
+                    <label class="form-label fw-semibold" for="f-{{ field.name }}">
+                      {{ field.label }}{% if field.unit %} <span class="wm-muted fw-normal">({{ field.unit }})</span>{% endif %}
+                    </label>
+                    {% if field.type == 'number' %}
+                    <input
+                      class="form-control"
+                      type="number"
+                      step="any"
+                      id="f-{{ field.name }}"
+                      name="{{ field.name }}"
+                      value="{{ values.get(field.name, field.default) }}"
+                      {% if field.min_allowed is not none %}min="{{ field.min_allowed }}"{% endif %}
+                      {% if field.max_allowed is not none %}max="{{ field.max_allowed }}"{% endif %}
+                      required
+                    />
+                    <div class="invalid-feedback">
+                      Ingresa un número{% if field.min_allowed is not none and field.max_allowed is not none %} entre {{ field.min_allowed }} y {{ field.max_allowed }}{% endif %}.
+                    </div>
+                    {% if field.min is not none and field.max is not none %}
+                    <div class="form-text">Valores del entrenamiento: {{ field.min }} a {{ field.max }}</div>
+                    {% endif %}
+                    {% else %}
+                    <select class="form-select" id="f-{{ field.name }}" name="{{ field.name }}" required>
+                      <option value="" disabled {{ 'selected' if not values.get(field.name) }}>Elige una opción</option>
+                      {% for option in field.options %}
+                      <option value="{{ option.value }}" {{ 'selected' if values.get(field.name) == option.value }}>{{ option.label }}</option>
+                      {% endfor %}
+                    </select>
+                    <div class="invalid-feedback">Elige una opción.</div>
+                    {% endif %}
+                  </div>
+                  {% endfor %}
+                </div>
+                <button class="btn btn-primary btn-lg w-100 mt-4" type="submit">
+                  <i class="bi bi-magic me-1"></i>Predecir
+                </button>
+              </form>
+            </div>
+            <div class="col-lg-5">
+              {% if prediction_result and prediction_result.text %}
+              <div class="wm-forecast {{ 'is-rain' if prediction_result.will_rain else 'is-dry' }}" role="status" aria-live="polite">
+                <i class="bi {{ 'bi-cloud-rain-heavy-fill' if prediction_result.will_rain else 'bi-sun-fill' }}"></i>
+                <p class="wm-forecast-text mb-1">{{ prediction_result.text }}</p>
+                {% if prediction_result.confidence is not none %}
+                <p class="mb-2">Confianza del modelo: <strong>{{ prediction_result.confidence }}%</strong></p>
+                <div
+                  class="progress"
+                  role="progressbar"
+                  aria-label="Confianza"
+                  aria-valuenow="{{ prediction_result.confidence }}"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                >
+                  <div class="progress-bar" style="width:{{ prediction_result.confidence }}%"></div>
+                </div>
+                {% endif %}
+              </div>
+              {% else %}
+              <div class="wm-forecast is-empty">
+                <i class="bi bi-cloud-sun"></i>
+                <p class="mb-0 wm-muted">El resultado aparecerá aquí.</p>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </section>
       {% endif %} {% endif %}
     </main>
     <!-- ================= FOOTER ================= -->
@@ -392,6 +495,16 @@
             }
           });
         }
+        // Validación del formulario de predicción antes de enviarlo
+        document.querySelectorAll("form.needs-validation").forEach(function (form) {
+          form.addEventListener("submit", function (e) {
+            if (!form.checkValidity()) {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+            }
+            form.classList.add("was-validated");
+          });
+        });
         // Botones con estado de carga mientras el servidor trabaja
         var forms = document.querySelectorAll("form[data-loading]");
         forms.forEach(function (form) {
