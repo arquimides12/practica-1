@@ -1,4 +1,28 @@
+# Entorno virtual
 venv/
+.venv/
+env/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+build/
+dist/
+# Pruebas y cobertura
 .pytest_cache/
+.coverage
+htmlcov/
+# Artefactos generados: el modelo se crea al entrenar
+models/*.joblib
+# Variables de entorno y secretos (config.py los lee de aquí)
+.env
+*.env
+# Logs
+*.log
+# Editores
+.vscode/
+.idea/
+# Sistema operativo y OneDrive
+Thumbs.db
+desktop.ini
+.DS_Store
